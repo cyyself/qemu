@@ -44,6 +44,10 @@ static TCGv load_val;
 /* globals for PM CSRs */
 static TCGv pm_mask;
 static TCGv pm_base;
+/* Instruction Statistic */
+static TCGv branch, branch_taken;
+static TCGv cload_cnt, cstore_cnt;
+static TCGv cload_taken_cnt, cstore_taken_cnt;
 
 /*
  * If an operation is being performed on less than TARGET_LONG_BITS,
@@ -1359,4 +1363,20 @@ void riscv_translate_init(void)
                                  "pmmask");
     pm_base = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, cur_pmbase),
                                  "pmbase");
+    /* Some Custom Statistic */
+    branch = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, branch),
+                                "branch");
+    branch_taken = tcg_global_mem_new(tcg_env,
+                                      offsetof(CPURISCVState, branch_taken),
+                                      "branch_taken");
+    cload_cnt = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, cload_cnt),
+                                   "cload_cnt");
+    cstore_cnt = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, cstore_cnt),
+                                    "cstore_cnt");
+    cload_taken_cnt = tcg_global_mem_new(tcg_env,
+                                         offsetof(CPURISCVState, cload_taken_cnt),
+                                         "cload_taken_cnt");
+    cstore_taken_cnt = tcg_global_mem_new(tcg_env,
+                                          offsetof(CPURISCVState, cstore_taken_cnt),
+                                          "cstore_taken_cnt");
 }

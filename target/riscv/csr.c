@@ -41,6 +41,54 @@ void riscv_set_csr_ops(int csrno, riscv_csr_operations *ops)
     csr_ops[csrno & (CSR_TABLE_SIZE - 1)] = *ops;
 }
 
+/* Branch Statistic */
+static RISCVException branch_count_pred(CPURISCVState *env, int csrno)
+{
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_br_count(CPURISCVState *env, int csrno,
+                                    target_ulong *val)
+{
+    *val = env->branch;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_br_t_count(CPURISCVState *env, int csrno,
+                                      target_ulong *val)
+{
+    *val = env->branch_taken;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_cond_load_count(CPURISCVState *env, int csrno,
+                                           target_ulong *val)
+{
+    *val = env->cload_cnt;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_cond_store_count(CPURISCVState *env, int csrno,
+                                            target_ulong *val)
+{
+    *val = env->cstore_cnt;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_cond_load_taken_count(CPURISCVState *env, int csrno,
+                                                 target_ulong *val)
+{
+    *val = env->cload_taken_cnt;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_cond_store_taken_count(CPURISCVState *env, int csrno,
+                                                  target_ulong *val)
+{
+    *val = env->cstore_taken_cnt;
+    return RISCV_EXCP_NONE;
+}
+
 /* Predicates */
 #if !defined(CONFIG_USER_ONLY)
 RISCVException smstateen_acc_ok(CPURISCVState *env, int index, uint64_t bit)
@@ -4933,6 +4981,14 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
 
     /* Zcmt Extension */
     [CSR_JVT] = {"jvt", zcmt, read_jvt, write_jvt},
+
+    /* Branch Statistic */
+    [CSR_BRANCH_COUNT]      = { "branch_count",  branch_count_pred,   read_br_count  },
+    [CSR_BRANCH_T_COUNT]    = { "branch_t_count",  branch_count_pred,   read_br_t_count  },
+    [CSR_C_LOAD_COUNT]      = { "cond_load_count",  branch_count_pred,   read_cond_load_count  },
+    [CSR_C_STORE_COUNT]     = { "cond_store_count",  branch_count_pred,   read_cond_store_count  },
+    [CSR_C_LOAD_T_COUNT]    = { "cond_load_t_count",  branch_count_pred,   read_cond_load_taken_count  },
+    [CSR_C_STORE_T_COUNT]   = { "cond_store_t_count",  branch_count_pred,   read_cond_store_taken_count  },
 
 #if !defined(CONFIG_USER_ONLY)
     /* Machine Timers and Counters */

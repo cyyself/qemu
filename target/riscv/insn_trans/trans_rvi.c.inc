@@ -164,6 +164,7 @@ static bool gen_branch(DisasContext *ctx, arg_b *a, TCGCond cond)
     TCGv src1 = get_gpr(ctx, a->rs1, EXT_SIGN);
     TCGv src2 = get_gpr(ctx, a->rs2, EXT_SIGN);
     target_ulong orig_pc_save = ctx->pc_save;
+    tcg_gen_addi_i64(branch, branch, 1);
 
     if (get_xl(ctx) == MXL_RV128) {
         TCGv src1h = get_gprh(ctx, a->rs1);
@@ -180,6 +181,8 @@ static bool gen_branch(DisasContext *ctx, arg_b *a, TCGCond cond)
     ctx->pc_save = orig_pc_save;
 
     gen_set_label(l); /* branch taken */
+
+    tcg_gen_addi_i64(branch_taken, branch_taken, 1);
 
     if (!has_ext(ctx, RVC) && !ctx->cfg_ptr->ext_zca &&
         (a->imm & 0x3)) {
