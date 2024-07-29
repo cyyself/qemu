@@ -29,6 +29,8 @@ static bool gen_cload(DisasContext *ctx, arg_clb *a, MemOp memop)
     target_ulong orig_pc_save = ctx->pc_save;
     bool out;
 
+    tcg_gen_addi_i64(cload_cnt, cload_cnt, 1);
+
     if (get_xl(ctx) == MXL_RV128) {
         TCGv baseh = get_gprh(ctx, a->rs1);
         TCGv tmp = tcg_temp_new();
@@ -39,6 +41,7 @@ static bool gen_cload(DisasContext *ctx, arg_clb *a, MemOp memop)
         tcg_gen_brcondi_tl(TCG_COND_EQ, base, 0, l);
     }
     out = gen_load(ctx, a, memop);
+    tcg_gen_addi_i64(cload_taken_cnt, cload_taken_cnt, 1);
     gen_goto_tb(ctx, 1, ctx->cur_insn_len);
     ctx->pc_save = orig_pc_save;
     gen_set_label(l); /* branch taken */
@@ -53,6 +56,8 @@ static bool gen_cstore(DisasContext *ctx, arg_csb *a, MemOp memop)
     TCGv base = get_gpr(ctx, a->rs1, EXT_SIGN);
     bool out;
 
+    tcg_gen_addi_i64(cstore_cnt, cstore_cnt, 1);
+
     if (get_xl(ctx) == MXL_RV128) {
         TCGv baseh = get_gprh(ctx, a->rs1);
         TCGv tmp = tcg_temp_new();
@@ -63,6 +68,7 @@ static bool gen_cstore(DisasContext *ctx, arg_csb *a, MemOp memop)
         tcg_gen_brcondi_tl(TCG_COND_EQ, base, 0, l);
     }
     out = gen_store(ctx, a, memop);
+    tcg_gen_addi_i64(cstore_taken_cnt, cstore_taken_cnt, 1);
     gen_set_label(l);
 
     return out;

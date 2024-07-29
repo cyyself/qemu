@@ -493,6 +493,12 @@
 #define CSR_MHPMCOUNTER29H  0xb9d
 #define CSR_MHPMCOUNTER30H  0xb9e
 #define CSR_MHPMCOUNTER31H  0xb9f
+#define CSR_BRANCH_COUNT    0xcc0
+#define CSR_BRANCH_T_COUNT  0xcc1
+#define CSR_C_LOAD_COUNT    0xcc2
+#define CSR_C_STORE_COUNT   0xcc3
+#define CSR_C_LOAD_T_COUNT  0xcc4
+#define CSR_C_STORE_T_COUNT 0xcc5
 
 /*
  * User PointerMasking registers
