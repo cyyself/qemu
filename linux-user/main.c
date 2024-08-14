@@ -131,7 +131,7 @@ const char *qemu_uname_release;
 /* XXX: on x86 MAP_GROWSDOWN only works if ESP <= address + 32, so
    we allocate a bigger stack. Need a better solution, for example
    by remapping the process stack directly at the right place */
-#define TARGET_DEFAULT_STACK_SIZE	8 * 1024 * 1024UL
+#define TARGET_DEFAULT_STACK_SIZE	80 * 1024 * 1024UL
 #endif
 
 unsigned long guest_stack_size = TARGET_DEFAULT_STACK_SIZE;
