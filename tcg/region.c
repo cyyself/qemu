@@ -480,14 +480,14 @@ static size_t tcg_n_regions(size_t tb_size, unsigned max_cpus)
  * of the translator don't go too nuts with our default code gen
  * buffer lest we make things too hard for the OS.
  */
-#define DEFAULT_CODE_GEN_BUFFER_SIZE_1 (128 * MiB)
+#define DEFAULT_CODE_GEN_BUFFER_SIZE_1 (4 * GiB)
 #else
 /*
  * We expect most system emulation to run one or two guests per host.
  * Users running large scale system emulation may want to tweak their
  * runtime setup via the tb-size control on the command line.
  */
-#define DEFAULT_CODE_GEN_BUFFER_SIZE_1 (1 * GiB)
+#define DEFAULT_CODE_GEN_BUFFER_SIZE_1 (4 * GiB)
 #endif
 #endif
 
