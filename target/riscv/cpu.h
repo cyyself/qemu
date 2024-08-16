@@ -239,6 +239,8 @@ struct CPUArchState {
     uint64_t cstore_cnt;
     uint64_t cload_taken_cnt;
     uint64_t cstore_taken_cnt;
+    uint64_t jal_cnt;
+    uint64_t jalr_cnt;
 
 #ifdef CONFIG_USER_ONLY
     uint32_t elf_flags;

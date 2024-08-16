@@ -50,6 +50,7 @@ static TCGv cload_cnt, cstore_cnt;
 static TCGv cload_taken_cnt, cstore_taken_cnt;
 static TCGv branch_long;
 static TCGv branch_long_taken;
+static TCGv jal_cnt, jalr_cnt;
 
 /*
  * If an operation is being performed on less than TARGET_LONG_BITS,
@@ -1388,4 +1389,8 @@ void riscv_translate_init(void)
     cstore_taken_cnt = tcg_global_mem_new(tcg_env,
                                           offsetof(CPURISCVState, cstore_taken_cnt),
                                           "cstore_taken_cnt");
+    jal_cnt = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, jal_cnt),
+                                 "jal_cnt");
+    jalr_cnt = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, jalr_cnt),
+                                  "jalr_cnt");
 }

@@ -46,6 +46,7 @@ static bool trans_auipc(DisasContext *ctx, arg_auipc *a)
 
 static bool trans_jal(DisasContext *ctx, arg_jal *a)
 {
+    tcg_gen_addi_i64(jal_cnt, jal_cnt, 1);
     gen_jal(ctx, a->rd, a->imm);
     return true;
 }
@@ -56,6 +57,7 @@ static bool trans_jalr(DisasContext *ctx, arg_jalr *a)
     TCGv target_pc = tcg_temp_new();
     TCGv succ_pc = dest_gpr(ctx, a->rd);
 
+    tcg_gen_addi_i64(jalr_cnt, jalr_cnt, 1);
     tcg_gen_addi_tl(target_pc, get_gpr(ctx, a->rs1, EXT_NONE), a->imm);
     tcg_gen_andi_tl(target_pc, target_pc, (target_ulong)-2);
 

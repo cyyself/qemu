@@ -103,6 +103,20 @@ static RISCVException read_cond_store_taken_count(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+static RISCVException read_jal_count(CPURISCVState *env, int csrno,
+                                     target_ulong *val)
+{
+    *val = env->jal_cnt;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_jalr_count(CPURISCVState *env, int csrno,
+                                      target_ulong *val)
+{
+    *val = env->jalr_cnt;
+    return RISCV_EXCP_NONE;
+}
+
 /* Predicates */
 #if !defined(CONFIG_USER_ONLY)
 RISCVException smstateen_acc_ok(CPURISCVState *env, int index, uint64_t bit)
@@ -5005,6 +5019,8 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     [CSR_C_STORE_T_COUNT]   = { "cond_store_t_count",  branch_count_pred,   read_cond_store_taken_count  },
     [CSR_BRANCH_L_COUNT]    = { "branch_l_count",  branch_count_pred,  read_br_l_count  },
     [CSR_BRANCH_LT_COUNT]   = { "branch_lt_count",  branch_count_pred,  read_br_lt_count  },
+    [CSR_JAL_COUNT]         = { "jal_count",  branch_count_pred,  read_jal_count  },
+    [CSR_JALR_COUNT]        = { "jalr_count",  branch_count_pred,  read_jalr_count  },
 
 #if !defined(CONFIG_USER_ONLY)
     /* Machine Timers and Counters */
