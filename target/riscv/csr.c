@@ -61,6 +61,20 @@ static RISCVException read_br_t_count(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+static RISCVException read_br_l_count(CPURISCVState *env, int csrno,
+                                      target_ulong *val)
+{
+    *val = env->branch_long;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_br_lt_count(CPURISCVState *env, int csrno,
+                                      target_ulong *val)
+{
+    *val = env->branch_long_taken;
+    return RISCV_EXCP_NONE;
+}
+
 static RISCVException read_cond_load_count(CPURISCVState *env, int csrno,
                                            target_ulong *val)
 {
@@ -4989,6 +5003,8 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     [CSR_C_STORE_COUNT]     = { "cond_store_count",  branch_count_pred,   read_cond_store_count  },
     [CSR_C_LOAD_T_COUNT]    = { "cond_load_t_count",  branch_count_pred,   read_cond_load_taken_count  },
     [CSR_C_STORE_T_COUNT]   = { "cond_store_t_count",  branch_count_pred,   read_cond_store_taken_count  },
+    [CSR_BRANCH_L_COUNT]    = { "branch_l_count",  branch_count_pred,  read_br_l_count  },
+    [CSR_BRANCH_LT_COUNT]   = { "branch_lt_count",  branch_count_pred,  read_br_lt_count  },
 
 #if !defined(CONFIG_USER_ONLY)
     /* Machine Timers and Counters */

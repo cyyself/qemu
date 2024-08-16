@@ -48,6 +48,8 @@ static TCGv pm_base;
 static TCGv branch, branch_taken;
 static TCGv cload_cnt, cstore_cnt;
 static TCGv cload_taken_cnt, cstore_taken_cnt;
+static TCGv branch_long;
+static TCGv branch_long_taken;
 
 /*
  * If an operation is being performed on less than TARGET_LONG_BITS,
@@ -1369,6 +1371,13 @@ void riscv_translate_init(void)
     branch_taken = tcg_global_mem_new(tcg_env,
                                       offsetof(CPURISCVState, branch_taken),
                                       "branch_taken");
+    branch_long = tcg_global_mem_new(tcg_env,
+                                     offsetof(CPURISCVState, branch_long),
+                                     "branch_long");
+    branch_long_taken = tcg_global_mem_new(tcg_env,
+                                           offsetof(CPURISCVState,
+                                                    branch_long_taken),
+                                           "branch_long_taken");
     cload_cnt = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, cload_cnt),
                                    "cload_cnt");
     cstore_cnt = tcg_global_mem_new(tcg_env, offsetof(CPURISCVState, cstore_cnt),

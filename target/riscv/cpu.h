@@ -233,6 +233,8 @@ struct CPUArchState {
     /* Some Custom Statistic */
     uint64_t branch;
     uint64_t branch_taken;
+    uint64_t branch_long;
+    uint64_t branch_long_taken;
     uint64_t cload_cnt;
     uint64_t cstore_cnt;
     uint64_t cload_taken_cnt;

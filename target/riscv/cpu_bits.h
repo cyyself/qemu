@@ -499,6 +499,8 @@
 #define CSR_C_STORE_COUNT   0xcc3
 #define CSR_C_LOAD_T_COUNT  0xcc4
 #define CSR_C_STORE_T_COUNT 0xcc5
+#define CSR_BRANCH_L_COUNT  0xcc6
+#define CSR_BRANCH_LT_COUNT 0xcc7
 
 /*
  * User PointerMasking registers
