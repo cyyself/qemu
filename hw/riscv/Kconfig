@@ -110,6 +110,13 @@ config SIFIVE_U
     select SSI_SD
     select UNIMP
 
+config RISCV_RTL
+    bool
+    default y
+    depends on RISCV64
+    select SERIAL_MM
+    select VIRTIO_MMIO
+
 config SPIKE
     bool
     default y
