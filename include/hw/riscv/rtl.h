@@ -87,11 +87,29 @@ enum {
 /* Default addresses within the MMIO region (0x60000000 base) */
 #define RTL_UART0_ADDR      0x60100000ULL
 #define RTL_UART0_SIZE      0x100ULL
-#define RTL_UART0_IRQ       10
+#define RTL_UART0_IRQ       0  /* bit 0 of irq_levels -> PLIC IRQ 1 */
 
 #define RTL_VIRTIO_ADDR     0x60200000ULL
 #define RTL_VIRTIO_SIZE     0x1000ULL
 #define RTL_VIRTIO_COUNT    8
-#define RTL_VIRTIO_IRQ      1  /* 1 to 8 */
+#define RTL_VIRTIO_IRQ      1  /* bit 1+ of irq_levels -> PLIC IRQ 2+ */
+
+/*
+ * Rocket-Chip internal device addresses (fixed in RTL design).
+ * Must match the Rocket-Chip configuration used to generate the Verilog.
+ */
+#define RTL_CLINT_ADDR      0x2000000ULL
+#define RTL_CLINT_SIZE      0x10000ULL
+#define RTL_PLIC_ADDR       0xc000000ULL
+#define RTL_PLIC_SIZE       0x4000000ULL
+#define RTL_PLIC_NDEV       2
+#define RTL_PLIC_MAX_PRIO   3
+
+/*
+ * Firmware load offset from DRAM base.
+ * A small trampoline at DRAM base sets a1 (FDT address) and jumps here.
+ * OpenSBI should be built with FW_TEXT_START = dram_base + RTL_FW_OFFSET.
+ */
+#define RTL_FW_OFFSET       0x200000ULL
 
 #endif /* HW_RISCV_RTL_H */

@@ -114,6 +114,7 @@ config RISCV_RTL
     bool
     default y
     depends on RISCV64
+    select DEVICE_TREE
     select SERIAL_MM
     select VIRTIO_MMIO
 

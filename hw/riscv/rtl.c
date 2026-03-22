@@ -23,11 +23,16 @@
 #include "hw/core/irq.h"
 #include "hw/char/serial-mm.h"
 #include "hw/riscv/rtl.h"
+#include "hw/riscv/boot.h"
+#include "hw/riscv/boot_opensbi.h"
 #include "hw/virtio/virtio-mmio.h"
 #include "chardev/char.h"
 #include "system/system.h"
 #include "system/address-spaces.h"
+#include "system/device_tree.h"
 #include "qom/object.h"
+
+#include <libfdt.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -561,6 +566,354 @@ static void rtl_accept_handler(void *opaque)
  * Connect to soc-simulator, perform handshake, set up devices, and start CPU.
  * Called after peripheral devices are created in rtl_machine_init().
  */
+
+/* ==================== FDT generation ==================== */
+
+/*
+ * Create a device tree for the RTL machine.
+ * Called after HELLO handshake so CPU info from soc-simulator is available.
+ * If the user provided -dtb, that file is loaded instead.
+ */
+static void rtl_create_fdt(RTLMachineState *s)
+{
+    MachineState *ms = MACHINE(s);
+    void *fdt;
+    uint32_t cpu_intc_phandle, plic_phandle;
+    char *name;
+    int fdt_alloc_size;
+
+    if (ms->dtb) {
+        int fdt_size;
+        fdt = load_device_tree(ms->dtb, &fdt_size);
+        if (!fdt) {
+            error_report("rtl: failed to load DTB '%s'", ms->dtb);
+            exit(1);
+        }
+        ms->fdt = fdt;
+        return;
+    }
+
+    fdt = create_device_tree(&fdt_alloc_size);
+    ms->fdt = fdt;
+
+    /* Root */
+    qemu_fdt_setprop_cell(fdt, "/", "#address-cells", 2);
+    qemu_fdt_setprop_cell(fdt, "/", "#size-cells", 2);
+    qemu_fdt_setprop_string(fdt, "/", "compatible",
+                            "freechips,rocketchip-unknown-dev");
+    qemu_fdt_setprop_string(fdt, "/", "model",
+                            "freechips,rocketchip-unknown");
+
+    /* /chosen */
+    qemu_fdt_add_subnode(fdt, "/chosen");
+
+    /* /cpus */
+    qemu_fdt_add_subnode(fdt, "/cpus");
+    qemu_fdt_setprop_cell(fdt, "/cpus", "#address-cells", 1);
+    qemu_fdt_setprop_cell(fdt, "/cpus", "#size-cells", 0);
+    qemu_fdt_setprop_cell(fdt, "/cpus", "timebase-frequency", 1000000);
+
+    /* CPU node(s) */
+    cpu_intc_phandle = qemu_fdt_alloc_phandle(fdt);
+    for (uint32_t i = 0; i < s->sock.num_cores; i++) {
+        char *intc_name;
+
+        name = g_strdup_printf("/cpus/cpu@%u", i);
+        qemu_fdt_add_subnode(fdt, name);
+        qemu_fdt_setprop_cell(fdt, name, "clock-frequency", 0);
+        qemu_fdt_setprop_string(fdt, name, "compatible", "riscv");
+        qemu_fdt_setprop_string(fdt, name, "device_type", "cpu");
+        qemu_fdt_setprop_cell(fdt, name, "reg", i);
+        qemu_fdt_setprop_string(fdt, name, "riscv,isa", s->sock.isa_string);
+        if (s->sock.xlen == 64) {
+            qemu_fdt_setprop_string(fdt, name, "mmu-type", "riscv,sv39");
+        } else {
+            qemu_fdt_setprop_string(fdt, name, "mmu-type", "riscv,sv32");
+        }
+        qemu_fdt_setprop_string(fdt, name, "status", "okay");
+
+        intc_name = g_strdup_printf("%s/interrupt-controller", name);
+        qemu_fdt_add_subnode(fdt, intc_name);
+        qemu_fdt_setprop_cell(fdt, intc_name, "#interrupt-cells", 1);
+        qemu_fdt_setprop_string(fdt, intc_name, "compatible",
+                                "riscv,cpu-intc");
+        qemu_fdt_setprop(fdt, intc_name, "interrupt-controller", NULL, 0);
+        qemu_fdt_setprop_cell(fdt, intc_name, "phandle", cpu_intc_phandle);
+        g_free(intc_name);
+        g_free(name);
+    }
+
+    /* /memory */
+    name = g_strdup_printf("/memory@%lx", (unsigned long)s->sock.dram_base);
+    qemu_fdt_add_subnode(fdt, name);
+    qemu_fdt_setprop_string(fdt, name, "device_type", "memory");
+    qemu_fdt_setprop_sized_cells(fdt, name, "reg",
+                                 2, s->sock.dram_base,
+                                 2, s->sock.dram_size);
+    g_free(name);
+
+    /* /soc */
+    qemu_fdt_add_subnode(fdt, "/soc");
+    qemu_fdt_setprop_cell(fdt, "/soc", "#address-cells", 2);
+    qemu_fdt_setprop_cell(fdt, "/soc", "#size-cells", 2);
+    qemu_fdt_setprop_string(fdt, "/soc", "compatible", "simple-bus");
+    qemu_fdt_setprop(fdt, "/soc", "ranges", NULL, 0);
+
+    /* CLINT */
+    name = g_strdup_printf("/soc/clint@%lx", (unsigned long)RTL_CLINT_ADDR);
+    qemu_fdt_add_subnode(fdt, name);
+    qemu_fdt_setprop_string(fdt, name, "compatible", "riscv,clint0");
+    qemu_fdt_setprop_sized_cells(fdt, name, "reg",
+                                 2, RTL_CLINT_ADDR,
+                                 2, RTL_CLINT_SIZE);
+    qemu_fdt_setprop_cells(fdt, name, "interrupts-extended",
+                           cpu_intc_phandle, 3,     /* MSIP */
+                           cpu_intc_phandle, 7);    /* MTIP */
+    g_free(name);
+
+    /* PLIC */
+    plic_phandle = qemu_fdt_alloc_phandle(fdt);
+    name = g_strdup_printf("/soc/interrupt-controller@%lx",
+                           (unsigned long)RTL_PLIC_ADDR);
+    qemu_fdt_add_subnode(fdt, name);
+    qemu_fdt_setprop_cell(fdt, name, "#interrupt-cells", 1);
+    qemu_fdt_setprop_string(fdt, name, "compatible", "sifive,plic-1.0.0");
+    qemu_fdt_setprop(fdt, name, "interrupt-controller", NULL, 0);
+    qemu_fdt_setprop_sized_cells(fdt, name, "reg",
+                                 2, RTL_PLIC_ADDR,
+                                 2, RTL_PLIC_SIZE);
+    qemu_fdt_setprop_cells(fdt, name, "interrupts-extended",
+                           cpu_intc_phandle, 11,    /* M-mode external */
+                           cpu_intc_phandle, 9);    /* S-mode external */
+    qemu_fdt_setprop_cell(fdt, name, "riscv,max-priority", RTL_PLIC_MAX_PRIO);
+    qemu_fdt_setprop_cell(fdt, name, "riscv,ndev", RTL_PLIC_NDEV);
+    qemu_fdt_setprop_cell(fdt, name, "phandle", plic_phandle);
+    g_free(name);
+
+    /* UART (ns16550a) */
+    name = g_strdup_printf("/soc/serial@%lx", (unsigned long)RTL_UART0_ADDR);
+    qemu_fdt_add_subnode(fdt, name);
+    qemu_fdt_setprop_string(fdt, name, "compatible", "ns16550a");
+    qemu_fdt_setprop_sized_cells(fdt, name, "reg",
+                                 2, RTL_UART0_ADDR,
+                                 2, RTL_UART0_SIZE);
+    qemu_fdt_setprop_cell(fdt, name, "reg-shift", 0);
+    qemu_fdt_setprop_cell(fdt, name, "clock-frequency", 3686400);
+    qemu_fdt_setprop_cell(fdt, name, "interrupt-parent", plic_phandle);
+    qemu_fdt_setprop_cell(fdt, name, "interrupts", RTL_UART0_IRQ + 1);
+    qemu_fdt_setprop_string(fdt, "/chosen", "stdout-path", name);
+    g_free(name);
+
+    /* VirtIO MMIO devices (only those with valid PLIC IRQs get FDT nodes) */
+    {
+        int virtio_fdt_count = MIN(RTL_VIRTIO_COUNT,
+                                   (int)RTL_PLIC_NDEV - 1);
+        for (int i = virtio_fdt_count - 1; i >= 0; i--) {
+            hwaddr addr = RTL_VIRTIO_ADDR + i * RTL_VIRTIO_SIZE;
+            name = g_strdup_printf("/soc/virtio_mmio@%lx",
+                                   (unsigned long)addr);
+            qemu_fdt_add_subnode(fdt, name);
+            qemu_fdt_setprop_string(fdt, name, "compatible", "virtio,mmio");
+            qemu_fdt_setprop_sized_cells(fdt, name, "reg",
+                                         2, addr,
+                                         2, (uint64_t)RTL_VIRTIO_SIZE);
+            qemu_fdt_setprop_cell(fdt, name, "interrupt-parent",
+                                  plic_phandle);
+            qemu_fdt_setprop_cell(fdt, name, "interrupts",
+                                  RTL_VIRTIO_IRQ + i + 1);
+            g_free(name);
+        }
+    }
+
+    info_report("rtl: FDT generated (%d bytes) - %u cores, %s, "
+                "DRAM 0x%lx+0x%lx",
+                fdt_totalsize(fdt), s->sock.num_cores, s->sock.isa_string,
+                (unsigned long)s->sock.dram_base,
+                (unsigned long)s->sock.dram_size);
+}
+
+/* ==================== Memory write helper ==================== */
+
+/*
+ * Write data to the RTL CPU's memory.
+ * Uses address_space_rw in QEMU memory mode, or MEM_WRITE in local mode.
+ */
+static bool rtl_write_memory(RTLMachineState *s, uint64_t addr,
+                              const void *data, size_t size)
+{
+    const uint8_t *p = data;
+
+    if (s->sock.memory_mode == RTL_MEMMODE_QEMU) {
+        while (size > 0) {
+            size_t chunk = MIN(size, 4096);
+            address_space_rw(&address_space_memory, addr,
+                             MEMTXATTRS_UNSPECIFIED,
+                             (void *)p, (int)chunk, true);
+            addr += chunk;
+            p += chunk;
+            size -= chunk;
+        }
+        return true;
+    } else {
+        while (size > 0) {
+            uint32_t chunk = (uint32_t)MIN(size, RTL_MAX_DMA_SIZE);
+            if (!rtl_mem_write(s, addr, p, chunk)) {
+                return false;
+            }
+            addr += chunk;
+            p += chunk;
+            size -= chunk;
+        }
+        return true;
+    }
+}
+
+/* ==================== BIOS / firmware loading ==================== */
+
+/*
+ * Load firmware with a boot trampoline and FDT.
+ *
+ * Firmware resolution uses the same logic as the virt machine:
+ *   - No -bios:           load built-in OpenSBI fw_dynamic (default)
+ *   - "-bios default":    same as above
+ *   - "-bios none":       skip firmware loading
+ *   - "-bios <file>":     load user-specified firmware
+ *
+ * Memory layout:
+ *   dram_base + 0x0:       trampoline (sets a1=FDT, a2=fw_dyn_info, jumps)
+ *   dram_base + 0x1000:    fw_dynamic_info struct
+ *   dram_base + FW_OFFSET: firmware binary
+ *   fdt_addr:              device tree blob (near end of DRAM)
+ *
+ * The Rocket-Chip bootrom jumps to dram_base with a0=mhartid.
+ * The trampoline overrides a1 (FDT address), sets a2 to point at
+ * fw_dynamic_info (for fw_dynamic), and jumps to the firmware.
+ */
+static void rtl_load_bios(RTLMachineState *s, const char *firmware_path)
+{
+    MachineState *ms = MACHINE(s);
+    uint64_t dram_base = s->sock.dram_base;
+    uint64_t dram_size = s->sock.dram_size;
+    uint64_t fw_addr = dram_base + RTL_FW_OFFSET;
+    uint64_t fdt_addr;
+    uint64_t fwdyn_addr = dram_base + 0x1000; /* fw_dynamic_info location */
+    int fdt_size;
+
+    /* Generate FDT (or load user-provided DTB via -dtb) */
+    rtl_create_fdt(s);
+    fdt_pack(ms->fdt);
+    fdt_size = fdt_totalsize(ms->fdt);
+
+    /* Place FDT near end of DRAM, aligned to 2MB */
+    fdt_addr = (dram_base + dram_size - fdt_size) & ~(0x200000ULL - 1);
+
+    info_report("rtl: firmware at 0x%lx, FDT at 0x%lx (%d bytes)",
+                (unsigned long)fw_addr, (unsigned long)fdt_addr, fdt_size);
+
+    /*
+     * Build boot trampoline (48 bytes = 6 insns + 3 dwords):
+     *   auipc  t0, 0           ; t0 = PC (dram_base)
+     *   ld     a1, 24(t0)      ; a1 = fdt_addr
+     *   ld     a2, 32(t0)      ; a2 = fwdyn_addr  (fw_dynamic_info ptr)
+     *   ld     t0, 40(t0)      ; t0 = fw_addr
+     *   jr     t0              ; jump to firmware
+     *   nop                    ; padding for alignment
+     *   .dword fdt_addr        ; offset 24
+     *   .dword fwdyn_addr      ; offset 32
+     *   .dword fw_addr         ; offset 40
+     */
+    uint32_t trampoline[12] = {
+        cpu_to_le32(0x00000297),                  /* auipc  t0, 0        */
+        cpu_to_le32(0x0182b583),                  /* ld     a1, 24(t0)   */
+        cpu_to_le32(0x0202b603),                  /* ld     a2, 32(t0)   */
+        cpu_to_le32(0x0282b283),                  /* ld     t0, 40(t0)   */
+        cpu_to_le32(0x00028067),                  /* jr     t0           */
+        cpu_to_le32(0x00000013),                  /* nop                 */
+        cpu_to_le32((uint32_t)(fdt_addr)),        /* fdt_addr low        */
+        cpu_to_le32((uint32_t)(fdt_addr >> 32)),  /* fdt_addr high       */
+        cpu_to_le32((uint32_t)(fwdyn_addr)),      /* fwdyn_addr low      */
+        cpu_to_le32((uint32_t)(fwdyn_addr >> 32)),/* fwdyn_addr high     */
+        cpu_to_le32((uint32_t)(fw_addr)),         /* fw_addr low         */
+        cpu_to_le32((uint32_t)(fw_addr >> 32)),   /* fw_addr high        */
+    };
+
+    /* Write trampoline at DRAM base */
+    if (!rtl_write_memory(s, dram_base, trampoline, sizeof(trampoline))) {
+        error_report("rtl: failed to write boot trampoline");
+        return;
+    }
+
+    /*
+     * Write fw_dynamic_info struct at fwdyn_addr.
+     * This tells OpenSBI fw_dynamic where to jump next (kernel).
+     * If no -kernel is specified, next_addr = 0 (OpenSBI will hang
+     * after init, which is fine for firmware-only testing).
+     */
+    {
+        uint64_t kernel_entry = 0;
+        if (ms->kernel_filename) {
+            /* Kernel loaded after firmware */
+            kernel_entry = fw_addr;  /* placeholder - not supported yet */
+        }
+
+        struct fw_dynamic_info64 fwdyn;
+        memset(&fwdyn, 0, sizeof(fwdyn));
+        fwdyn.magic     = cpu_to_le64(FW_DYNAMIC_INFO_MAGIC_VALUE);
+        fwdyn.version   = cpu_to_le64(FW_DYNAMIC_INFO_VERSION);
+        fwdyn.next_addr = cpu_to_le64(kernel_entry);
+        fwdyn.next_mode = cpu_to_le64(FW_DYNAMIC_INFO_NEXT_MODE_S);
+        fwdyn.options   = 0;
+        fwdyn.boot_hart = 0;
+
+        if (!rtl_write_memory(s, fwdyn_addr, &fwdyn, sizeof(fwdyn))) {
+            error_report("rtl: failed to write fw_dynamic_info");
+            return;
+        }
+    }
+
+    /* Load firmware binary at dram_base + FW_OFFSET */
+    {
+        FILE *fp = fopen(firmware_path, "rb");
+        if (!fp) {
+            error_report("rtl: failed to open firmware '%s': %s",
+                         firmware_path, strerror(errno));
+            return;
+        }
+
+        uint8_t chunk[4096];
+        uint64_t write_addr = fw_addr;
+        size_t total = 0;
+        size_t n;
+
+        while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+            if (!rtl_write_memory(s, write_addr, chunk, n)) {
+                error_report("rtl: failed to write firmware at 0x%lx",
+                             (unsigned long)write_addr);
+                fclose(fp);
+                return;
+            }
+            write_addr += n;
+            total += n;
+        }
+        fclose(fp);
+
+        info_report("rtl: loaded firmware '%s' (%zu bytes) at 0x%lx",
+                    firmware_path, total, (unsigned long)fw_addr);
+    }
+
+    /* Write FDT at computed address */
+    if (!rtl_write_memory(s, fdt_addr, ms->fdt, fdt_size)) {
+        error_report("rtl: failed to write FDT at 0x%lx",
+                     (unsigned long)fdt_addr);
+        return;
+    }
+
+    info_report("rtl: boot: trampoline@0x%lx -> fw@0x%lx, fdt@0x%lx",
+                (unsigned long)dram_base, (unsigned long)fw_addr,
+                (unsigned long)fdt_addr);
+}
+
+/* ==================== Connection and initialization ==================== */
 static void rtl_connect_and_init(RTLMachineState *s)
 {
     /* Parse host:port from socket_path */
@@ -662,12 +1015,21 @@ static void rtl_connect_and_init(RTLMachineState *s)
     /*
      * Load firmware into memory before starting the CPU.
      *
-     * In QEMU memory mode: load -kernel into our DRAM MemoryRegion.
-     * In local memory mode: load -kernel into soc-simulator's memory
-     * via MEM_WRITE messages.
+     * Firmware resolution (same as virt machine):
+     *   No -bios:        load built-in OpenSBI fw_dynamic (default)
+     *   -bios default:   same as above
+     *   -bios none:      skip firmware, fall through to -kernel path
+     *   -bios <file>:    load user-specified firmware
+     *
+     * -kernel without firmware: load raw binary at DRAM base.
      */
     MachineState *machine = MACHINE(s);
-    if (machine->kernel_filename) {
+    char *firmware_path = riscv_find_firmware(machine->firmware,
+                                              RISCV64_BIOS_BIN);
+    if (firmware_path) {
+        rtl_load_bios(s, firmware_path);
+        g_free(firmware_path);
+    } else if (machine->kernel_filename) {
         if (s->sock.memory_mode == RTL_MEMMODE_QEMU) {
             /* QEMU memory mode: load directly into DRAM via address_space_rw.
              * Cannot use load_image_targphys() here because ROM blobs can only
