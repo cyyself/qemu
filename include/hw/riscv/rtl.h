@@ -73,9 +73,41 @@ struct RTLMachineState {
     /* Request ID counters */
     uint32_t mem_req_id;
     uint32_t dma_req_id;
+    uint32_t dmi_req_id;
 
     /* RTL CPU state */
     bool rtl_cpu_started;
+
+    /* GDB RSP server state */
+    char *gdb_addr;          /* GDB listen address (host:port), NULL = disabled */
+    int gdb_listen_fd;       /* GDB listening socket */
+    int gdb_fd;              /* GDB connected client socket */
+    bool gdb_connected;
+    bool gdb_noack;          /* GDB no-ack mode */
+    uint8_t gdb_rxbuf[4096]; /* receive buffer */
+    size_t gdb_rxlen;        /* bytes in receive buffer */
+    QEMUTimer *gdb_poll_timer;
+    bool gdb_target_running;
+    bool gdb_saved_dcsr_valid;
+    uint64_t gdb_saved_dcsr;
+
+    /* DMI response tracking for synchronous DMI from GDB context */
+    bool dmi_resp_pending;
+    uint32_t dmi_resp_req_id;
+    uint32_t dmi_resp_data;
+    uint32_t dmi_resp_status;
+
+    /* DMA read response tracking for synchronous DMA proxy reads */
+    bool dma_read_resp_pending;
+    uint32_t dma_read_resp_req_id;
+    uint32_t dma_read_resp_status;
+    uint32_t dma_read_resp_size;
+    uint8_t dma_read_resp_data[8];
+
+    /* DMA write response tracking for synchronous DMA proxy writes */
+    bool dma_write_resp_pending;
+    uint32_t dma_write_resp_req_id;
+    uint32_t dma_write_resp_status;
 };
 
 /* Memory map for peripherals provided by QEMU in the MMIO region */
@@ -111,5 +143,13 @@ enum {
  * OpenSBI should be built with FW_TEXT_START = dram_base + RTL_FW_OFFSET.
  */
 #define RTL_FW_OFFSET       0x200000ULL
+
+/*
+ * Kernel load offset from DRAM base.
+ * When -kernel is specified alongside firmware, the kernel Image is
+ * loaded at dram_base + RTL_KERNEL_OFFSET and fw_dynamic_info.next_addr
+ * is set accordingly.
+ */
+#define RTL_KERNEL_OFFSET   0x400000ULL
 
 #endif /* HW_RISCV_RTL_H */

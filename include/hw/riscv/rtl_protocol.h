@@ -124,6 +124,15 @@ enum rtl_msg_type {
     RTL_MSG_CPU_MEM_WRITE      = 0x72,  /* RTL -> QEMU: CPU writes memory */
     RTL_MSG_CPU_MEM_WRITE_RESP = 0x73,  /* QEMU -> RTL: write ack */
 
+    /*
+     * Debug / DMI interface.
+     * QEMU sends DMI requests to the soc-simulator which drives them
+     * on the Rocket-Chip debug port.  This enables GDB debugging of
+     * the RTL CPU core.
+     */
+    RTL_MSG_DEBUG_DMI_REQ  = 0x80,  /* QEMU -> RTL: DMI read/write */
+    RTL_MSG_DEBUG_DMI_RESP = 0x81,  /* RTL -> QEMU: DMI response */
+
     /* Control */
     RTL_MSG_SHUTDOWN       = 0xF0,  /* Either -> Either: terminate */
 };
@@ -444,6 +453,31 @@ struct rtl_msg_cpu_mem_write_resp {
     struct rtl_msg_header hdr;
     uint32_t req_id;
     uint32_t status;     /* 0=OK, 1=error */
+} __attribute__((packed));
+
+/*
+ * Debug DMI request: QEMU -> RTL
+ *
+ * Performs a single DMI register read or write on the Rocket-Chip
+ * debug module.  Used by the GDB server in QEMU.
+ */
+struct rtl_msg_debug_dmi_req {
+    struct rtl_msg_header hdr;
+    uint32_t req_id;
+    uint8_t  addr;       /* DMI address (7-bit) */
+    uint8_t  op;         /* 1=read, 2=write */
+    uint8_t  reserved[2];
+    uint32_t data;       /* write data (ignored for reads) */
+} __attribute__((packed));
+
+/*
+ * Debug DMI response: RTL -> QEMU
+ */
+struct rtl_msg_debug_dmi_resp {
+    struct rtl_msg_header hdr;
+    uint32_t req_id;
+    uint32_t data;       /* read data */
+    uint32_t status;     /* 0=success, nonzero=error */
 } __attribute__((packed));
 
 /*
